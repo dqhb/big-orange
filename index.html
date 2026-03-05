@@ -43,14 +43,14 @@
 
     <div id="ui-layer">
         <div id="top-bar">
-            <h1>fury of 1000</h1>
+            <h1>orange</h1>
             <div id="level-display">Level 1 / 1000</div>
         </div>
     </div>
 
     <div id="menu">
         <h2>THE ORANGE WATCHES</h2>
-        <p><span class="controls-text">A / D</span> Move | <span class="controls-text">W / SPACE</span> Single Jump | Dodge the <span style="color:#ef4444; font-weight:bold;">Red Lasers</span></p>
+        <p><span class="controls-text">A / D</span> Move | <span class="controls-text">W / SPACE</span> Double Jump | Dodge the <span style="color:#ef4444; font-weight:bold;">Red Lasers</span></p>
         <button id="start-btn">BEGIN RUN</button>
     </div>
 
@@ -87,39 +87,61 @@
             gameLoop();
         });
 
-        const keys = { a: false, d: false, w: false, space: false };
+        const keys = { a: false, d: false };
+        let jumpPressed = false; // Prevents holding down the key to auto-jump
+
         window.addEventListener('keydown', e => { 
             let key = e.key.toLowerCase();
             if(keys.hasOwnProperty(key)) keys[key] = true; 
-            if(e.code === 'Space') keys.space = true; 
+            
+            // Double Jump Logic
+            if((e.code === 'Space' || key === 'w') && !jumpPressed) {
+                jumpPressed = true;
+                if (!player.dead && player.jumpsLeft > 0) {
+                    player.vy = player.jumpPower;
+                    player.jumpsLeft--;
+                    player.grounded = false;
+                }
+            }
         });
+        
         window.addEventListener('keyup', e => { 
             let key = e.key.toLowerCase();
             if(keys.hasOwnProperty(key)) keys[key] = false; 
-            if(e.code === 'Space') keys.space = false; 
+            if(e.code === 'Space' || key === 'w') jumpPressed = false; 
         });
 
         let currentLevel = 1;
         let platforms = [];
         let lasers = [];
+        let particles = [];
+        let bgOranges = [];
         let cameraX = 0;
         let cameraY = 0;
-        let deathY = 0; // Tracks the lowest point of the generated room
+        let deathY = 0; 
 
         const player = {
             x: 0, y: 0, w: 24, h: 24,
             vx: 0, vy: 0,
             speed: 0.9, maxSpeed: 7, friction: 0.85,
-            jumpPower: -13.5, gravity: 0.65,
-            grounded: false, color: '#38bdf8'
+            jumpPower: -12.5, gravity: 0.65, // Slightly lower jump power since we have two
+            grounded: false, 
+            jumpsLeft: 2, maxJumps: 2,
+            color: '#38bdf8', dead: false
         };
 
         function buildLevel(level) {
             platforms = [];
             lasers = [];
+            particles = [];
+            bgOranges = [];
             
             let curX = 100;
             let curY = 0;
+            let minX = 0;
+            let maxX = 200;
+            let minY = 0;
+            let maxY = 0;
             
             // Start platform
             platforms.push({ x: curX, y: curY + 100, w: 200, h: 20, type: 'start', color: '#facc15' });
@@ -128,12 +150,12 @@
             player.y = curY;
             player.vx = 0;
             player.vy = 0;
+            player.dead = false;
+            player.jumpsLeft = player.maxJumps;
 
-            // Massive rooms: At least 20 jumps, scales up to 40 later on
+            // Room scaling
             let numJumps = 20 + Math.floor(level * 0.05);
             let lowestY = curY + 100;
-
-            // Difficulty modifier (0.0 to 1.0 based on level progress)
             let diff = Math.min(level / 800, 1);
 
             for (let i = 0; i < numJumps; i++) {
@@ -141,40 +163,49 @@
                 let gapX, gapY, platW;
 
                 if (jumpPattern === 0) {
-                    // Stairs Up: Steep vertical climbs
-                    gapX = 80 + Math.random() * 40;
-                    gapY = -70 - Math.random() * 50;
+                    gapX = 90 + Math.random() * 50;
+                    gapY = -80 - Math.random() * 60;
                     platW = 100 - (diff * 40);
                 } else if (jumpPattern === 1) {
-                    // Stairs Down: Controlled drops
-                    gapX = 100 + Math.random() * 60;
-                    gapY = 80 + Math.random() * 80;
+                    gapX = 120 + Math.random() * 80;
+                    gapY = 100 + Math.random() * 90;
                     platW = 100 - (diff * 40);
                 } else if (jumpPattern === 2) {
-                    // Long Horizontal Stretch
-                    gapX = 140 + (diff * 50);
-                    gapY = (Math.random() * 40) - 20;
+                    gapX = 180 + (diff * 60); // Wider gaps because double jump
+                    gapY = (Math.random() * 50) - 25;
                     platW = 120 - (diff * 50);
                 } else {
-                    // Stepping Stones (tight platforms)
-                    gapX = 70 + Math.random() * 30;
-                    gapY = (Math.random() * 80) - 40;
+                    gapX = 80 + Math.random() * 40;
+                    gapY = (Math.random() * 100) - 50;
                     platW = Math.max(20, 60 - (diff * 30));
                 }
 
                 curX += gapX;
                 curY += gapY;
                 
-                if (curY > lowestY) lowestY = curY; // Update death boundary
+                if (curY > lowestY) lowestY = curY;
+                if (curY < minY) minY = curY;
+                if (curX > maxX) maxX = curX;
 
                 platforms.push({ x: curX, y: curY, w: Math.max(20, platW), h: 20, type: 'normal', color: '#cbd5e1' });
                 curX += Math.max(20, platW);
             }
             
-            // Goal platform
-            platforms.push({ x: curX + 120, y: curY, w: 200, h: 20, type: 'goal', color: '#4ade80' });
+            platforms.push({ x: curX + 150, y: curY, w: 200, h: 20, type: 'goal', color: '#4ade80' });
+            maxX = curX + 350;
+            maxY = lowestY;
             
-            deathY = lowestY + 600; // Give some buffer below the lowest platform
+            // Generate Parallax Background Oranges based on room size
+            for(let i = 0; i < 40; i++) {
+                bgOranges.push({
+                    x: minX + Math.random() * (maxX - minX) * 1.5 - (maxX - minX) * 0.25,
+                    y: minY + Math.random() * (maxY - minY + 1000) - 500,
+                    r: Math.random() * 150 + 50,
+                    parallax: Math.random() * 0.4 + 0.1 // 0.1 is far away, 0.5 is closer
+                });
+            }
+
+            deathY = lowestY + 600; 
             levelUI.innerText = `Level ${level} / 1000`;
         }
 
@@ -185,11 +216,43 @@
                    rect1.y + rect1.h > rect2.y;
         }
 
+        function createSplash(x, y) {
+            for(let i = 0; i < 40; i++) {
+                particles.push({
+                    x: x, y: y,
+                    vx: (Math.random() - 0.5) * 16,
+                    vy: (Math.random() - 0.5) * 16 - 4,
+                    size: Math.random() * 6 + 2,
+                    life: 1.0,
+                    decay: Math.random() * 0.02 + 0.01
+                });
+            }
+        }
+
         function die() {
-            buildLevel(currentLevel); // Reset
+            if (player.dead) return;
+            player.dead = true;
+            createSplash(player.x + player.w / 2, player.y + player.h / 2);
+            
+            // Wait 1 second before restarting so the player can see the juice splash
+            setTimeout(() => {
+                buildLevel(currentLevel);
+            }, 1000);
         }
 
         function updatePhysics() {
+            // Update Particles
+            for(let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.5; // Gravity on juice
+                p.life -= p.decay;
+                if(p.life <= 0) particles.splice(i, 1);
+            }
+
+            if (player.dead) return; // Stop player movement while dead
+
             // Horizontal Movement
             if (keys.a) player.vx -= player.speed;
             if (keys.d) player.vx += player.speed;
@@ -215,10 +278,11 @@
             // Vertical Collisions
             for (let p of platforms) {
                 if (isColliding(player, p)) {
-                    if (player.vy > 0) {
+                    if (player.vy > 0) { // Landing
                         player.y = p.y - player.h;
                         player.vy = 0;
                         player.grounded = true;
+                        player.jumpsLeft = player.maxJumps; // Reset double jumps
                         
                         if (p.type === 'goal') {
                             currentLevel++;
@@ -230,40 +294,35 @@
                             }
                             return; 
                         }
-                    } else if (player.vy < 0) {
+                    } else if (player.vy < 0) { // Hitting head
                         player.y = p.y + p.h;
                         player.vy = 0;
                     }
                 }
             }
 
-            // Single Jump (Strictly requires grounding)
-            if (player.grounded && (keys.w || keys.space)) {
-                player.vy = player.jumpPower;
-                player.grounded = false;
-            }
-
-            // Fall off the absolute bottom of the generated room
+            // Fall off the absolute bottom
             if (player.y > deathY) {
                 die();
             }
         }
 
         function updateBossAttacks() {
+            if (player.dead) return; // Boss stops attacking if you're dead
+
             let baseRate = 0.005;
             let levelRate = currentLevel * 0.0001;
             let spawnChance = Math.min(baseRate + levelRate, 0.12);
 
-            if (currentLevel === 1000) spawnChance = 0.2; // Bullet hell for final level
+            if (currentLevel === 1000) spawnChance = 0.2; 
 
             if (Math.random() < spawnChance) {
-                // Lasers spawn in world space relative to player
                 let targetWorldX = player.x + (Math.random() * 600 - 300);
                 lasers.push({
                     worldX: targetWorldX,
                     w: 40 + Math.random() * 50,
-                    timer: 60, // Frames of warning
-                    activeTimer: 15, // Frames of actual damage
+                    timer: 60, 
+                    activeTimer: 15, 
                     state: 'warning'
                 });
             }
@@ -281,7 +340,7 @@
                     }
                     
                     if (player.x < l.worldX + l.w && player.x + player.w > l.worldX) {
-                        die(); // Hit by laser
+                        die(); 
                     }
                 }
             }
@@ -291,22 +350,27 @@
             ctx.fillStyle = '#0f172a';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // True 2D Smooth Camera (Follows X and Y)
             let targetCameraX = player.x - canvas.width / 2;
-            let targetCameraY = player.y - canvas.height / 1.6; // Keep player slightly lower on screen
+            let targetCameraY = player.y - canvas.height / 1.6; 
             
             cameraX += (targetCameraX - cameraX) * 0.1;
             cameraY += (targetCameraY - cameraY) * 0.1;
 
-            // --- UI LAYER (Drawn without camera offset) ---
-            
-            // Draw Boss (Giant Orange fixed at top center of screen)
+            // --- BACKGROUND LAYER ---
+            for (let o of bgOranges) {
+                ctx.fillStyle = 'rgba(255, 136, 0, 0.05)'; // Very faint orange
+                ctx.beginPath();
+                // Apply parallax math: multiply camera position by the parallax factor
+                ctx.arc(o.x - (cameraX * o.parallax), o.y - (cameraY * o.parallax), o.r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // --- UI/BOSS LAYER ---
             ctx.fillStyle = '#ff8800';
             ctx.beginPath();
             ctx.arc(canvas.width / 2, 0, 150, 0, Math.PI * 2);
             ctx.fill();
             
-            // Boss Eyes (staring down, tracking player X)
             ctx.fillStyle = '#111';
             let eyeOffsetX = (player.x - (cameraX + canvas.width/2)) * 0.05; 
             ctx.beginPath();
@@ -314,13 +378,11 @@
             ctx.arc(canvas.width / 2 + 40 + eyeOffsetX, 60, 15, 0, Math.PI * 2);
             ctx.fill();
 
-            // Draw Lasers (Locked to world X, but span entire screen Y)
             for (let l of lasers) {
                 let screenX = l.worldX - cameraX;
                 if (l.state === 'warning') {
                     ctx.fillStyle = 'rgba(239, 68, 68, 0.15)'; 
                     ctx.fillRect(screenX, 0, l.w, canvas.height);
-                    
                     ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
                     ctx.lineWidth = 2;
                     ctx.strokeRect(screenX, 0, l.w, canvas.height);
@@ -333,20 +395,36 @@
                 }
             }
 
-            // --- WORLD LAYER (Drawn with camera offset) ---
-
-            // Draw Platforms
+            // --- WORLD LAYER ---
             for (let p of platforms) {
                 ctx.fillStyle = p.color;
                 ctx.fillRect(p.x - cameraX, p.y - cameraY, p.w, p.h);
             }
 
-            // Draw Player
-            ctx.fillStyle = player.color;
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = player.color;
-            ctx.fillRect(player.x - cameraX, player.y - cameraY, player.w, player.h);
-            ctx.shadowBlur = 0;
+            // Draw Juice Splash Particles
+            ctx.fillStyle = '#f97316'; // Vivid Orange
+            for(let p of particles) {
+                ctx.globalAlpha = p.life;
+                ctx.beginPath();
+                ctx.arc(p.x - cameraX, p.y - cameraY, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1.0;
+
+            // Draw Player (Only if alive)
+            if (!player.dead) {
+                ctx.fillStyle = player.color;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = player.color;
+                ctx.fillRect(player.x - cameraX, player.y - cameraY, player.w, player.h);
+                ctx.shadowBlur = 0;
+                
+                // Visual indicator for double jump (inner glow)
+                if (player.jumpsLeft === 2) {
+                    ctx.fillStyle = '#bae6fd';
+                    ctx.fillRect(player.x - cameraX + 6, player.y - cameraY + 6, player.w - 12, player.h - 12);
+                }
+            }
         }
 
         function gameLoop() {
