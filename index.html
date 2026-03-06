@@ -15,19 +15,17 @@
         button { background: #ff8800; color: #0f172a; border: none; padding: 15px 40px; font-size: 1.5rem; font-weight: bold; border-radius: 8px; cursor: pointer; text-transform: uppercase; box-shadow: 0 0 15px #ff8800; transition: transform 0.1s; }
         button:hover { transform: scale(1.05); }
         #game-over { display: none; }
-        #attack-name { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); font-size: 1.5rem; color: #facc15; font-weight: bold; text-shadow: 0 0 10px #facc15; opacity: 0; transition: opacity 0.3s; text-transform: uppercase; }
     </style>
 </head>
 <body>
 
     <div id="ui">SCORE: <span id="score-val">0</span></div>
-    <div id="attack-name">ATTACK INCOMING</div>
 
     <div id="menu">
         <h1>big orange</h1>
         <p>You are an Orange. The Boss is an Orange.<br>
         Use <span class="highlight">W / A / S / D</span> or <span class="highlight">ARROWS</span> to move.<br>
-        <span class="highlight">W</span> fires your jetpack to fight gravity. Survive all 20 attacks.</p>
+        <span class="highlight">SPACEBAR</span> to Dash. <span class="highlight">W</span> fires your jetpack.</p>
         <button id="start-btn">ENGAGE</button>
     </div>
 
@@ -44,13 +42,12 @@
         const ctx = canvas.getContext('2d');
         const scoreEl = document.getElementById('score-val');
         const finalScoreEl = document.getElementById('final-score');
-        const attackNameEl = document.getElementById('attack-name');
         
         function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; boss.x = canvas.width/2; boss.y = canvas.height/2; }
         window.addEventListener('resize', resize);
 
         let isPlaying = false, frame = 0, score = 0, attackTimer = 100;
-        const keys = { w: false, a: false, s: false, d: false };
+        const keys = { w: false, a: false, s: false, d: false, space: false };
 
         window.addEventListener('keydown', e => {
             let k = e.key.toLowerCase();
@@ -58,6 +55,7 @@
             if (k==='s' || k==='arrowdown') keys.s = true;
             if (k==='a' || k==='arrowleft') keys.a = true;
             if (k==='d' || k==='arrowright') keys.d = true;
+            if (k===' ' || e.code==='Space') { keys.space = true; e.preventDefault(); }
         });
         window.addEventListener('keyup', e => {
             let k = e.key.toLowerCase();
@@ -65,13 +63,14 @@
             if (k==='s' || k==='arrowdown') keys.s = false;
             if (k==='a' || k==='arrowleft') keys.a = false;
             if (k==='d' || k==='arrowright') keys.d = false;
+            if (k===' ' || e.code==='Space') keys.space = false;
         });
 
-        const player = { x: 200, y: 200, r: 12, vx: 0, vy: 0, speed: 0.8, friction: 0.92, gravity: 0.4, thrust: -0.9, color: '#f97316' };
+        const player = { x: 200, y: 200, r: 12, vx: 0, vy: 0, speed: 0.8, friction: 0.92, gravity: 0.4, thrust: -0.9, dashCooldown: 0, color: '#f97316' };
         const boss = { x: 0, y: 0, r: 60, color: '#ea580c', angle: 0 };
         
-        let projs = []; // Moving hazards
-        let zones = []; // Lasers, nukes, static hazards
+        let projs = []; 
+        let zones = []; 
         let particles = [];
 
         resize();
@@ -96,24 +95,15 @@
             zones.push({ type, timer: 60, state: 'warn', ...extra });
         }
 
-        function displayAttack(name) {
-            attackNameEl.innerText = name;
-            attackNameEl.style.opacity = 1;
-            setTimeout(() => attackNameEl.style.opacity = 0, 2000);
-        }
-
         function triggerAttack() {
             score++; scoreEl.innerText = score;
-            let type = Math.floor(Math.random() * 20) + 1; // 1 to 20
+            let type = Math.floor(Math.random() * 20) + 1; 
             let cx = canvas.width/2; let cy = canvas.height/2;
 
             switch(type) {
-                case 1: // 8-Way Spinning Lasers
-                    displayAttack("Spinning Core");
-                    spawnZone('spinLasers', { angle: 0, speed: 0.02, life: 300 });
-                    break;
-                case 2: // Asteroids
-                    displayAttack("Asteroid Field");
+                case 1: 
+                    spawnZone('spinLasers', { angle: 0, speed: 0.02, life: 300 }); break;
+                case 2: 
                     for(let i=0; i<8; i++) {
                         let edgeX = Math.random() < 0.5 ? 0 : canvas.width;
                         let edgeY = Math.random() * canvas.height;
@@ -121,99 +111,78 @@
                         let ty = player.y + (Math.random()*200-100);
                         let a = Math.atan2(ty - edgeY, tx - edgeX);
                         spawnProj(edgeX, edgeY, Math.cos(a)*6, Math.sin(a)*6, 20, 'asteroid');
-                    }
-                    break;
-                case 3: // H/V Random Lasers
-                    displayAttack("Grid Lock");
+                    } break;
+                case 3: 
                     for(let i=0; i<4; i++) {
                         if(Math.random()>0.5) spawnZone('hvLaser', { isH: true, y: Math.random()*canvas.height, h: 40 });
                         else spawnZone('hvLaser', { isH: false, x: Math.random()*canvas.width, w: 40 });
-                    }
-                    break;
-                case 4: // Orange Nuke
-                    displayAttack("Citrus Nuke");
-                    spawnZone('nuke', { x: cx, y: cy, r: canvas.height*0.4 });
-                    break;
-                case 5: // Homing Missiles
-                    displayAttack("Seekers");
-                    for(let i=0; i<3; i++) spawnProj(cx, cy, (Math.random()-0.5)*10, (Math.random()-0.5)*10, 8, 'homing', { life: 200 });
-                    break;
-                case 6: // Bouncy Oranges
-                    displayAttack("Bouncers");
-                    for(let i=0; i<5; i++) spawnProj(cx, cy, (Math.random()-0.5)*15, (Math.random()-0.5)*15, 15, 'bouncy', { bounces: 4 });
-                    break;
-                case 7: // Nova
-                    displayAttack("Supernova");
-                    for(let i=0; i<20; i++) { let a = (i/20)*Math.PI*2; spawnProj(cx, cy, Math.cos(a)*5, Math.sin(a)*5, 10); }
-                    break;
-                case 8: // Wall of Doom
-                    displayAttack("The Wall");
+                    } break;
+                case 4: 
+                    spawnZone('nuke', { x: cx, y: cy, r: canvas.height*0.4 }); break;
+                case 5: 
+                    for(let i=0; i<3; i++) spawnProj(cx, cy, (Math.random()-0.5)*10, (Math.random()-0.5)*10, 8, 'homing', { life: 200 }); break;
+                case 6: 
+                    for(let i=0; i<5; i++) spawnProj(cx, cy, (Math.random()-0.5)*15, (Math.random()-0.5)*15, 15, 'bouncy', { bounces: 4 }); break;
+                case 7: // Supernova - Now has a warning zone before exploding
+                    spawnZone('supernova', { x: cx, y: cy, r: 80 }); break;
+                case 8: 
                     let gap = Math.random() * (canvas.height - 200) + 100;
                     for(let y=0; y<canvas.height; y+=30) {
                         if(Math.abs(y-gap)>80) spawnProj(0, y, 7, 0, 12);
-                    }
-                    break;
-                case 9: // Minefield
-                    displayAttack("Minefield");
-                    for(let i=0; i<6; i++) spawnZone('mine', { x: Math.random()*canvas.width, y: Math.random()*canvas.height, r: 80 });
-                    break;
-                case 10: // Sniper
-                    displayAttack("Sniper Lock");
-                    spawnZone('sniper', { tx: player.x, ty: player.y });
-                    break;
-                case 11: // Crossfire
-                    displayAttack("Crossfire");
-                    spawnZone('cross', { life: 100 });
-                    break;
-                case 12: // Falling Juice
-                    displayAttack("Acid Rain");
-                    for(let i=0; i<15; i++) spawnProj(Math.random()*canvas.width, -50, 0, 8+Math.random()*4, 6);
-                    break;
-                case 13: // Sine Wave
-                    displayAttack("Wobblers");
-                    for(let i=0; i<10; i++) spawnProj(0, Math.random()*canvas.height, 5+Math.random()*3, 0, 8, 'sine', { startY: Math.random()*canvas.height, offset: Math.random()*Math.PI*2 });
-                    break;
-                case 14: // Shotgun
-                    displayAttack("Shotgun");
+                    } break;
+                case 9: 
+                    for(let i=0; i<6; i++) spawnZone('mine', { x: Math.random()*canvas.width, y: Math.random()*canvas.height, r: 80 }); break;
+                case 10: 
+                    spawnZone('sniper', { tx: player.x, ty: player.y }); break;
+                case 11: 
+                    spawnZone('cross', { life: 100 }); break;
+                case 12: 
+                    for(let i=0; i<15; i++) spawnProj(Math.random()*canvas.width, -50, 0, 8+Math.random()*4, 6); break;
+                case 13: 
+                    for(let i=0; i<10; i++) spawnProj(0, Math.random()*canvas.height, 5+Math.random()*3, 0, 8, 'sine', { startY: Math.random()*canvas.height, offset: Math.random()*Math.PI*2 }); break;
+                case 14: 
                     let baseA = Math.atan2(player.y-cy, player.x-cx);
                     for(let i=0; i<12; i++) {
                         let spread = baseA + (Math.random()-0.5)*0.8;
                         let spd = 6 + Math.random()*8;
                         spawnProj(cx, cy, Math.cos(spread)*spd, Math.sin(spread)*spd, 7);
-                    }
-                    break;
-                case 15: // Lava Floor
-                    displayAttack("Lava Floor");
-                    spawnZone('lava', { y: canvas.height - 150, h: 150, life: 180 });
-                    break;
-                case 16: // Spiral
-                    displayAttack("Spiral Core");
-                    spawnZone('spiral', { angle: 0, life: 150 });
-                    break;
-                case 17: // Orbiting Shields
-                    displayAttack("Orbital Strike");
-                    for(let i=0; i<8; i++) spawnProj(cx, cy, 0, 0, 12, 'orbit', { angle: (i/8)*Math.PI*2, dist: boss.r, speed: 0.05, expand: 2 });
-                    break;
-                case 18: // Shrapnel
-                    displayAttack("Shrapnel");
+                    } break;
+                case 15: 
+                    spawnZone('lava', { y: canvas.height - 150, h: 150, life: 180 }); break;
+                case 16: 
+                    spawnZone('spiral', { angle: 0, life: 150 }); break;
+                case 17: 
+                    for(let i=0; i<8; i++) spawnProj(cx, cy, 0, 0, 12, 'orbit', { angle: (i/8)*Math.PI*2, dist: boss.r, speed: 0.05, expand: 2 }); break;
+                case 18: 
                     let px = player.x + (Math.random()*200-100); let py = player.y-200;
-                    spawnProj(cx, cy, (px-cx)*0.05, (py-cy)*0.05, 18, 'shrapnel', { timer: 30 });
-                    break;
-                case 19: // Gravity Well (Black Hole)
-                    displayAttack("Vortex");
-                    spawnZone('blackhole', { x: Math.random()*canvas.width, y: Math.random()*canvas.height, life: 200 });
-                    break;
-                case 20: // The Blender
-                    displayAttack("The Blender");
-                    spawnZone('blender', { angle: 0, life: 200 });
-                    break;
+                    spawnProj(cx, cy, (px-cx)*0.05, (py-cy)*0.05, 18, 'shrapnel', { timer: 30 }); break;
+                case 19: 
+                    spawnZone('blackhole', { x: Math.random()*canvas.width, y: Math.random()*canvas.height, life: 200 }); break;
+                case 20: 
+                    spawnZone('blender', { angle: 0, life: 200 }); break;
             }
         }
 
         function update() {
+            // Dash Logic
+            player.dashCooldown--;
+            if (keys.space && player.dashCooldown <= 0) {
+                let dx = 0, dy = 0;
+                if (keys.a) dx -= 1; if (keys.d) dx += 1;
+                if (keys.w) dy -= 1; if (keys.s) dy += 1;
+                
+                if (dx !== 0 || dy !== 0) {
+                    let dist = Math.hypot(dx, dy);
+                    player.vx = (dx / dist) * 20; 
+                    player.vy = (dy / dist) * 20;
+                    player.dashCooldown = 45; // Cooldown frames
+                    for(let i=0; i<15; i++) particles.push({ x: player.x, y: player.y, vx: (Math.random()-0.5)*8, vy: (Math.random()-0.5)*8, r: 5, life: 1 });
+                }
+            }
+
             // Player Physics (Jetpack)
             if (keys.w) { player.vy += player.thrust; createExhaust(); }
-            if (keys.s) player.vy -= player.thrust * 0.5; // push down slightly
+            if (keys.s) player.vy -= player.thrust * 0.5;
             if (keys.a) player.vx -= player.speed;
             if (keys.d) player.vx += player.speed;
 
@@ -230,15 +199,14 @@
             if (player.y < player.r) { player.y = player.r; player.vy = 0; }
             if (player.y > canvas.height - player.r) { player.y = canvas.height - player.r; player.vy = 0; }
 
-            // Boss Hitbox (Instant death touching the boss)
+            // Boss Hitbox 
             if (Math.hypot(player.x - boss.x, player.y - boss.y) < player.r + boss.r) die();
             boss.angle += 0.01;
 
-            // Game Loop Timers
             attackTimer--;
             if (attackTimer <= 0) {
                 triggerAttack();
-                attackTimer = Math.max(50, 150 - (score * 2)); // Gets faster over time
+                attackTimer = Math.max(50, 150 - (score * 2)); 
             }
 
             // Update Projectiles
@@ -272,17 +240,14 @@
                         projs.splice(i, 1);
                     }
                 } else {
-                    // Normal straight movement
                     p.x += p.vx; p.y += p.vy;
                 }
 
                 if (Math.hypot(player.x - p.x, player.y - p.y) < player.r + p.r) die();
-                
-                // Cleanup offscreen (unless bouncy)
                 if (p.type !== 'bouncy' && (p.x < -100 || p.x > canvas.width + 100 || p.y < -100 || p.y > canvas.height + 100)) projs.splice(i, 1);
             }
 
-            // Update Zones & Complex Attacks
+            // Update Zones
             for (let i = zones.length - 1; i >= 0; i--) {
                 let z = zones[i];
                 z.timer--;
@@ -290,7 +255,7 @@
                 if (z.type === 'spinLasers') {
                     z.life--; z.angle += z.speed;
                     if(z.life <= 0) { zones.splice(i, 1); continue; }
-                    if(z.timer <= 0) { // Active
+                    if(z.timer <= 0) { 
                         for(let j=0; j<8; j++) {
                             let a = z.angle + (j/8)*Math.PI*2;
                             let p2x = boss.x + Math.cos(a)*2000; let p2y = boss.y + Math.sin(a)*2000;
@@ -303,10 +268,18 @@
                         if (z.isH) z.rect = { x: 0, y: z.y-z.h/2, w: canvas.width, h: z.h };
                         else z.rect = { x: z.x-z.w/2, y: 0, w: z.w, h: canvas.height };
                     }
-                } else if (z.type === 'nuke' || z.type === 'mine') {
-                    if (z.timer <= 0) {
+                } else if (z.type === 'nuke' || z.type === 'mine' || z.type === 'supernova') {
+                    if (z.timer <= 0 && z.state === 'warn') {
+                        z.state = 'explode'; 
+                        z.timer = (z.type === 'nuke') ? 20 : 15; // Frames the glow is active
+                        if (z.type === 'supernova') {
+                            for(let j=0; j<20; j++) {
+                                let a = (j/20)*Math.PI*2; spawnProj(z.x, z.y, Math.cos(a)*5, Math.sin(a)*5, 10);
+                            }
+                        }
+                    } else if (z.state === 'explode') {
                         if(Math.hypot(player.x - z.x, player.y - z.y) < z.r + player.r) die();
-                        z.state = 'explode'; z.timer = 10; z.type = 'killZone';
+                        if (z.timer <= 0) zones.splice(i, 1);
                     }
                 } else if (z.type === 'sniper') {
                     if (z.timer <= 0) {
@@ -317,10 +290,7 @@
                 } else if (z.type === 'cross') {
                     z.life--; if(z.life <= 0) zones.splice(i, 1);
                     if(z.timer <= 0) {
-                        let lines = [
-                            [{x:0,y:0}, {x:canvas.width,y:canvas.height}],
-                            [{x:canvas.width,y:0}, {x:0,y:canvas.height}]
-                        ];
+                        let lines = [[{x:0,y:0}, {x:canvas.width,y:canvas.height}], [{x:canvas.width,y:0}, {x:0,y:canvas.height}]];
                         lines.forEach(l => { if (distToSegment(player, l[0], l[1]) < 20) die(); });
                     }
                 } else if (z.type === 'lava') {
@@ -335,7 +305,7 @@
                     z.life--; if(z.life <= 0) zones.splice(i, 1);
                     if (z.timer <= 0) {
                         let d = Math.hypot(z.x-player.x, z.y-player.y);
-                        if (d < 30) die(); // Event horizon
+                        if (d < 30) die(); 
                         player.vx += ((z.x-player.x)/d) * 0.8; player.vy += ((z.y-player.y)/d) * 0.8;
                     }
                 } else if (z.type === 'blender') {
@@ -370,7 +340,7 @@
             // Zones & Lasers
             for (let z of zones) {
                 if (z.type === 'spinLasers' || z.type === 'cross' || z.type === 'blender') {
-                    ctx.strokeStyle = z.timer>0 ? 'rgba(255,136,0,0.2)' : '#ef4444';
+                    ctx.strokeStyle = z.timer>0 ? 'rgba(255,136,0,0.2)' : '#ff8800';
                     ctx.lineWidth = z.timer>0 ? 4 : (z.type==='blender'?60:30);
                     ctx.beginPath();
                     if (z.type === 'spinLasers') {
@@ -387,13 +357,24 @@
                     }
                     ctx.stroke();
                 } else if (z.type === 'hvLaser') {
-                    ctx.fillStyle = z.timer>0 ? 'rgba(255,136,0,0.2)' : '#ef4444';
+                    ctx.fillStyle = z.timer>0 ? 'rgba(255,136,0,0.2)' : '#ff8800';
                     if (z.isH) ctx.fillRect(0, z.y-z.h/2, canvas.width, z.h);
                     else ctx.fillRect(z.x-z.w/2, 0, z.w, canvas.height);
-                } else if (z.type === 'nuke' || z.type === 'mine') {
-                    ctx.fillStyle = z.state==='explode' ? '#ef4444' : 'rgba(234,88,12,0.2)';
-                    ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, Math.PI*2); ctx.fill();
-                    if(z.state!=='explode') { ctx.strokeStyle='#ea580c'; ctx.stroke(); }
+                } else if (z.type === 'nuke' || z.type === 'mine' || z.type === 'supernova') {
+                    if (z.state === 'explode') {
+                        // The Orange Glow
+                        ctx.shadowBlur = 30;
+                        ctx.shadowColor = '#ff8800';
+                        ctx.fillStyle = '#ff8800';
+                        ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, Math.PI*2); ctx.fill();
+                        ctx.shadowBlur = 0; // Reset
+                    } else {
+                        // Warning state
+                        ctx.fillStyle = 'rgba(251,146,60,0.15)';
+                        ctx.strokeStyle = '#ff8800';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+                    }
                 } else if (z.type === 'sniper') {
                     ctx.strokeStyle = 'rgba(239,68,68,0.5)'; ctx.lineWidth = 2;
                     ctx.beginPath(); ctx.moveTo(boss.x, boss.y); ctx.lineTo(z.tx, z.ty); ctx.stroke();
@@ -406,14 +387,26 @@
                 }
             }
 
-            // Boss
+            // Draw Boss with Face
+            ctx.save();
+            ctx.translate(boss.x, boss.y);
+            ctx.rotate(boss.angle);
+            
+            // Orange Body
             ctx.fillStyle = boss.color;
-            ctx.beginPath(); ctx.arc(boss.x, boss.y, boss.r, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = '#0f172a'; // Texture dots on boss
-            for(let i=0; i<6; i++) {
-                let a = boss.angle + (i/6)*Math.PI*2;
-                ctx.beginPath(); ctx.arc(boss.x+Math.cos(a)*(boss.r-15), boss.y+Math.sin(a)*(boss.r-15), 6, 0, Math.PI*2); ctx.fill();
-            }
+            ctx.beginPath(); ctx.arc(0, 0, boss.r, 0, Math.PI*2); ctx.fill();
+            
+            // The Face
+            ctx.fillStyle = '#0f172a'; // Black eyes
+            ctx.beginPath(); ctx.arc(-20, -15, 8, 0, Math.PI*2); ctx.fill(); // Left Eye
+            ctx.beginPath(); ctx.arc(20, -15, 8, 0, Math.PI*2); ctx.fill(); // Right Eye
+            
+            // The Smile
+            ctx.strokeStyle = '#0f172a';
+            ctx.lineWidth = 5;
+            ctx.beginPath(); ctx.arc(0, 5, 25, 0, Math.PI, false); ctx.stroke();
+            
+            ctx.restore();
 
             // Projectiles
             ctx.fillStyle = '#facc15';
@@ -435,7 +428,6 @@
             particles.push({ x: player.x + (Math.random()*10-5), y: player.y + player.r + Math.random()*5, vx: (Math.random()-0.5), vy: 2 + Math.random()*2, r: 4 + Math.random()*3, life: 1 });
         }
 
-        // Math helper for laser collision (Line segment distance)
         function distToSegment(p, v, w) {
             let l2 = (v.x - w.x)**2 + (v.y - w.y)**2;
             if (l2 == 0) return Math.hypot(p.x - v.x, p.y - v.y);
