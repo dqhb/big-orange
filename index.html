@@ -48,6 +48,18 @@
     <canvas id="gameCanvas"></canvas>
 
     <script>
+        // --- ANTI-CHEAT SNIPPET ---
+        // Block right-click context menu
+        document.addEventListener('contextmenu', e => e.preventDefault());
+
+        // Block common developer tool keyboard shortcuts
+        document.addEventListener('keydown', e => {
+            if (e.key === 'F12') e.preventDefault();
+            if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) e.preventDefault();
+            if (e.ctrlKey && e.key === 'u') e.preventDefault();
+        });
+        // --------------------------
+
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const scoreEl = document.getElementById('score-val');
@@ -69,7 +81,7 @@
             if (k==='s' || k==='arrowdown') keys.s = true;
             if (k==='a' || k==='arrowleft') keys.a = true;
             if (k==='d' || k==='arrowright') keys.d = true;
-            if (k===' ' || e.code==='Space') { keys.space = true; e.preventDefault(); }
+            if (k===' ' || e.code==='Space') { keys.space = true; } // Don't prevent default here to allow anti-cheat logic
         });
         window.addEventListener('keyup', e => {
             let k = e.key.toLowerCase();
@@ -138,12 +150,11 @@
             player.pulseTimer = 20; 
             boss.pulseTimer = 20; 
             
-            // New Scaling Logic
             let scale = Math.floor(score / 20); // Adds +1 to projectiles/minions every 20 score
-            let numAttacks = score >= 50 ? 2 : 1; // Only stack attacks at 50+
+            let numAttacks = score >= 50 ? 2 : 1; // Stack 2 attacks at 50+
 
             for (let a = 0; a < numAttacks; a++) {
-                let type = Math.floor(Math.random() * 25) + 1; // 25 attacks now
+                let type = Math.floor(Math.random() * 25) + 1; // Random 1-25
                 let cx = canvas.width/2; let cy = canvas.height/2;
 
                 switch(type) {
@@ -212,12 +223,9 @@
                         let speed24 = (canvas.width / 90) * (fromRight24 ? -1 : 1);
                         spawnZone('sweeper', { x: startX24, w: 150, speed: speed24, timer: 45 }); break;
                     case 25:
-                        // Puddle projectiles that deal no damage but create slow zones
                         for(let i=0; i<10 + scale; i++) {
-                            let tx = Math.random() * canvas.width;
-                            let ty = Math.random() * canvas.height;
-                            let ang = Math.atan2(ty - cy, tx - cx);
-                            let spd = 6 + Math.random()*4;
+                            let tx = Math.random() * canvas.width; let ty = Math.random() * canvas.height;
+                            let ang = Math.atan2(ty - cy, tx - cx); let spd = 6 + Math.random()*4;
                             let dist = Math.hypot(tx - cx, ty - cy);
                             spawnProj(cx, cy, Math.cos(ang)*spd, Math.sin(ang)*spd, 12, 'puddle_proj', { life: dist / spd });
                         }
@@ -317,13 +325,12 @@
                     } else if (p.type === 'puddle_proj') {
                         p.x += p.vx; p.y += p.vy; p.life--;
                         if (p.life <= 0) {
-                            spawnZone('puddle', { x: p.x, y: p.y, r: 45, life: 300 }); // Splat! Lasts 5 seconds
+                            spawnZone('puddle', { x: p.x, y: p.y, r: 45, startScore: score }); // Splat! Tied to global score
                             projs.splice(i, 1);
-                            continue; // Skip death check for this one
+                            continue;
                         }
                     } else { p.x += p.vx; p.y += p.vy; }
 
-                    // Make sure puddle bullets don't instantly kill you
                     if (p.type !== 'puddle_proj' && Math.hypot(player.x - p.x, player.y - p.y) < player.r + p.r) die();
                     if (p.type !== 'bouncy' && (p.x < -100 || p.x > canvas.width + 100 || p.y < -100 || p.y > canvas.height + 100)) projs.splice(i, 1);
                 }
@@ -398,30 +405,23 @@
                             if (distToSegment(player, boss, {x:p1x,y:p1y}) < 30 || distToSegment(player, boss, {x:p2x,y:p2y}) < 30) die();
                         }
                     } else if (z.type === 'minion') { 
-                        z.angle += z.spin;
-                        z.fireCooldown--;
+                        z.angle += z.spin; z.fireCooldown--;
                         if(Math.hypot(player.x - z.x, player.y - z.y) < z.r + player.r) die();
-                        
                         if (z.fireCooldown <= 0) {
                             let spd = 6;
-                            spawnProj(z.x, z.y, spd, spd, 8, 'normal'); 
-                            spawnProj(z.x, z.y, -spd, spd, 8, 'normal');  
-                            spawnProj(z.x, z.y, spd, -spd, 8, 'normal'); 
-                            spawnProj(z.x, z.y, -spd, -spd, 8, 'normal');  
-                            
+                            spawnProj(z.x, z.y, spd, spd, 8); spawnProj(z.x, z.y, -spd, spd, 8);  
+                            spawnProj(z.x, z.y, spd, -spd, 8); spawnProj(z.x, z.y, -spd, -spd, 8);  
                             z.fireCooldown = 60; z.attacksLeft--;
                             if (z.attacksLeft <= 0) zones.splice(i, 1);
                         }
                     } else if (z.type === 'spikes') { 
-                        if (z.timer <= 0 && z.state === 'warn') {
-                            z.state = 'active'; z.timer = 50;
+                        if (z.timer <= 0 && z.state === 'warn') { z.state = 'active'; z.timer = 50;
                         } else if (z.state === 'active') {
                             if (z.timer <= 0) zones.splice(i, 1);
                             else if (player.x < z.length || player.x > canvas.width - z.length || player.y < z.length || player.y > canvas.height - z.length) die();
                         }
                     } else if (z.type === 'grid') { 
-                        if (z.timer <= 0 && z.state === 'warn') {
-                            z.state = 'active'; z.timer = 20; 
+                        if (z.timer <= 0 && z.state === 'warn') { z.state = 'active'; z.timer = 20; 
                         } else if (z.state === 'active') {
                             if (z.timer <= 0) zones.splice(i, 1);
                             else {
@@ -432,16 +432,17 @@
                             }
                         }
                     } else if (z.type === 'sweeper') { 
-                        if (z.timer <= 0 && z.state === 'warn') {
-                            z.state = 'active'; z.timer = 150; 
+                        if (z.timer <= 0 && z.state === 'warn') { z.state = 'active'; z.timer = 150; 
                         } else if (z.state === 'active') {
                             z.x += z.speed;
                             if (Math.abs(player.x - z.x) < z.w/2 + player.r) die();
                             if ((z.speed > 0 && z.x > canvas.width + z.w) || (z.speed < 0 && z.x < -z.w)) zones.splice(i, 1);
                         }
                     } else if (z.type === 'puddle') {
-                        z.life--;
-                        if (z.life <= 0) zones.splice(i, 1);
+                        // Check if 3 attacks have happened since this puddle spawned
+                        if (score >= z.startScore + 3) {
+                            zones.splice(i, 1);
+                        }
                     }
                 }
             }
@@ -520,7 +521,6 @@
             for (let z of zones) {
                 if (z.type === 'spinLasers' || z.type === 'cross' || z.type === 'blender') {
                     let currentRotation = (z.type === 'blender') ? (z.angle + (frame * 0.02)) : z.angle;
-
                     ctx.strokeStyle = (z.timer > 0 && z.state === 'warn') ? 'rgba(255,136,0,0.2)' : '#ff8800';
                     ctx.lineWidth = (z.timer > 0 && z.state === 'warn') ? 4 : (z.type==='blender'?60:30);
                     if (!(z.timer > 0 && z.state === 'warn')) { ctx.shadowBlur = 20; ctx.shadowColor = '#ff8800'; } else { ctx.shadowBlur = 0; }
@@ -559,23 +559,15 @@
                     ctx.fillStyle = z.timer>0 ? 'rgba(147,51,234,0.3)' : '#eacc33';
                     ctx.beginPath(); ctx.arc(z.x, z.y, 40 + Math.sin(frame*0.2)*10, 0, Math.PI*2); ctx.fill();
                 } else if (z.type === 'minion') { 
-                    ctx.save();
-                    ctx.translate(z.x, z.y);
-                    ctx.rotate(z.angle);
-                    ctx.fillStyle = '#f97316';
-                    ctx.beginPath();
-                    ctx.roundRect(-z.r * 1.5, -z.r * 0.3, z.r * 3, z.r * 0.6, 5); 
-                    ctx.roundRect(-z.r * 0.3, -z.r * 1.5, z.r * 0.6, z.r * 3, 5);
-                    ctx.fill();
+                    ctx.save(); ctx.translate(z.x, z.y); ctx.rotate(z.angle); ctx.fillStyle = '#f97316';
+                    ctx.beginPath(); ctx.roundRect(-z.r * 1.5, -z.r * 0.3, z.r * 3, z.r * 0.6, 5); ctx.roundRect(-z.r * 0.3, -z.r * 1.5, z.r * 0.6, z.r * 3, 5); ctx.fill();
                     ctx.beginPath(); ctx.arc(0, 0, z.r, 0, Math.PI*2); ctx.fill();
-                    drawFace(0, 0, z.r, phase); 
-                    ctx.restore();
+                    drawFace(0, 0, z.r, phase); ctx.restore();
                 } else if (z.type === 'spikes') { 
                     let curLen = z.state === 'warn' ? z.length * 0.2 : z.length;
                     ctx.fillStyle = z.state === 'warn' ? 'rgba(239,68,68,0.3)' : '#f97316';
                     if (z.state === 'active') { ctx.shadowBlur = 10; ctx.shadowColor = '#f97316'; }
-                    let bw = 60; 
-                    ctx.beginPath();
+                    let bw = 60; ctx.beginPath();
                     for(let x=0; x<=canvas.width; x+=bw) { ctx.moveTo(x,0); ctx.lineTo(x+bw/2,curLen); ctx.lineTo(x+bw,0); }
                     for(let x=0; x<=canvas.width; x+=bw) { ctx.moveTo(x,canvas.height); ctx.lineTo(x+bw/2,canvas.height-curLen); ctx.lineTo(x+bw,canvas.height); }
                     for(let y=0; y<=canvas.height; y+=bw) { ctx.moveTo(0,y); ctx.lineTo(curLen,y+bw/2); ctx.lineTo(0,y+bw); }
@@ -590,10 +582,9 @@
                 } else if (z.type === 'sweeper') { 
                     ctx.fillStyle = z.state === 'warn' ? 'rgba(255,136,0,0.3)' : '#ff8800';
                     if (z.state === 'active') { ctx.shadowBlur = 20; ctx.shadowColor = '#ff8800'; }
-                    ctx.fillRect(z.x - z.w/2, 0, z.w, canvas.height);
-                    ctx.shadowBlur = 0;
+                    ctx.fillRect(z.x - z.w/2, 0, z.w, canvas.height); ctx.shadowBlur = 0;
                 } else if (z.type === 'puddle') {
-                    ctx.fillStyle = `rgba(249, 115, 22, ${0.4 * (z.life / 300)})`; // Fading sticky juice
+                    ctx.fillStyle = `rgba(249, 115, 22, 0.4)`;
                     ctx.beginPath(); ctx.ellipse(z.x, z.y, z.r, z.r * 0.6, 0, 0, Math.PI * 2); ctx.fill();
                 }
             }
@@ -615,45 +606,34 @@
                     ctx.fillStyle = '#ea580c'; ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI*2); ctx.fill();
                     drawFace(0, 0, p.r, phase); ctx.restore();
                 } else if (p.type === 'asteroid') {
-                    ctx.fillStyle = '#c2410c';
-                    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
-                    // Smiley face
+                    ctx.fillStyle = '#c2410c'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
                     ctx.fillStyle = '#0f172a';
                     ctx.beginPath(); ctx.arc(p.x - p.r*0.3, p.y - p.r*0.2, p.r*0.15, 0, Math.PI*2); ctx.fill();
                     ctx.beginPath(); ctx.arc(p.x + p.r*0.3, p.y - p.r*0.2, p.r*0.15, 0, Math.PI*2); ctx.fill();
                     ctx.strokeStyle = '#0f172a'; ctx.lineWidth = p.r * 0.15;
                     ctx.beginPath(); ctx.arc(p.x, p.y + p.r*0.1, p.r*0.4, 0, Math.PI, false); ctx.stroke();
                 } else if (p.type === 'puddle_proj') {
-                    ctx.fillStyle = '#f97316';
-                    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = '#f97316'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
                 } else {
-                    if (p.type === 'homing') ctx.fillStyle = '#ef4444';
-                    else ctx.fillStyle = '#facc15';
+                    if (p.type === 'homing') ctx.fillStyle = '#ef4444'; else ctx.fillStyle = '#facc15';
                     ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
                 }
             }
 
             if (!winState) {
-                ctx.save();
-                ctx.translate(player.x, player.y);
-                ctx.rotate(player.angle);
+                ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
                 let pRadius = player.r + (player.pulseTimer > 0 ? Math.sin(player.pulseTimer * 0.5) * 3 : 0);
                 ctx.fillStyle = player.color;
                 ctx.beginPath(); ctx.arc(0, 0, pRadius, 0, Math.PI*2); ctx.fill();
-                drawFace(0, 0, player.r, 0); 
-                ctx.restore();
+                drawFace(0, 0, player.r, 0); ctx.restore();
             }
         }
 
         function createExhaust() {
             particles.push({ 
-                x: player.x + (Math.random()*10-5), 
-                y: player.y + player.r + Math.random()*5, 
-                vx: (Math.random()-0.5) - player.angle * 2, 
-                vy: 2 + Math.random()*2, 
-                r: 4 + Math.random()*3, 
-                life: 1, 
-                color: '#f97316' 
+                x: player.x + (Math.random()*10-5), y: player.y + player.r + Math.random()*5, 
+                vx: (Math.random()-0.5) - player.angle * 2, vy: 2 + Math.random()*2, 
+                r: 4 + Math.random()*3, life: 1, color: '#f97316' 
             });
         }
 
